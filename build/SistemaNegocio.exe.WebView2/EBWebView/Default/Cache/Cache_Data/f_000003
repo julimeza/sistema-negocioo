@@ -1,0 +1,695 @@
+// cigarros.js (reemplaza el actual)
+document.addEventListener("DOMContentLoaded", () => {
+  // DOM
+  const inputScanner = document.getElementById("codigoScanner");
+  const form = document.getElementById("formCigarro");
+  const productoSelect = document.getElementById("productoSelect");
+  const stockDisponible = document.getElementById("stockDisponible");
+  const tipoVenta = document.getElementById("tipoVenta");
+  const cantidad = document.getElementById("cantidad");
+  const totalInput = document.getElementById("total");
+  const btnAgregarCarrito = document.getElementById("btnAgregarCarrito");
+  const btnVaciarCarrito = document.getElementById("btnVaciarCarrito");
+  const tablaCarrito = document.getElementById("tablaCarrito");
+  const subtotalCarrito = document.getElementById("subtotalCarrito");
+  const formaPago = document.getElementById("formaPago");
+  const fechaFiltro = document.getElementById("fechaFiltro");
+  const btnBuscarFecha = document.getElementById("btnBuscarFecha");
+  const btnHoy = document.getElementById("btnHoy");
+  const tablaVentas = document.getElementById("tablaVentas");
+  const totalVendido = document.getElementById("totalVendido");
+  const totalGanancia = document.getElementById("totalGanancia");
+  const btnValidarCaja = document.getElementById("btnValidarCaja");
+  const passCaja = document.getElementById("passCaja");
+  const contenidoCierreCaja = document.getElementById("contenidoCierreCaja");
+
+  let productos = [];
+  let productosById = new Map();
+  let carrito = [];
+  let ventasLista = [];
+  let scannerBuffer = "";
+  let scannerTimeout = null;
+  let beep = null;
+
+  // ===============================
+// 🔵 SCANNER SOLO PARA CONSULTAR PRECIO
+// ===============================
+let bufferPrecio = "";
+let timeoutPrecio = null;
+
+document.addEventListener("keypress", (e) => {
+  if (timeoutPrecio) clearTimeout(timeoutPrecio);
+
+  if (e.key === "Enter") {
+    mostrarPrecioScannerCigarro(bufferPrecio.trim());
+    bufferPrecio = "";
+    return;
+  }
+
+  bufferPrecio += e.key;
+
+  timeoutPrecio = setTimeout(() => {
+    bufferPrecio = "";
+  }, 80);
+});
+
+  try { beep = new Audio("/sounds/beep.mp3"); } catch(e){}
+
+  const PASS_CAJA = "Emanuel2025";
+
+  function mostrarPrecioScannerCigarro(codigo) {
+  if (!codigo) return;
+
+  // buscar producto en memoria
+  const p = productos.find(prod => String(prod.codigo_barra || "") === codigo);
+
+  if (!p) {
+    toast("Producto no encontrado", "danger");
+    return;
+  }
+
+  // precio unitario según tus cálculos
+  const precioUnit = precioUnitarioDesdeProducto(p);
+  const precioFinal = Number(precioUnit).toFixed(2);
+
+  // completar modal
+  document.getElementById("precioScannerNombre").innerText = p.nombre;
+  document.getElementById("precioScannerValor").innerText = "$" + precioFinal;
+
+  const modal = new bootstrap.Modal(document.getElementById("modalPrecioScanner"));
+  modal.show();
+
+  // 🔥 cierre automático en 2s
+  setTimeout(() => {
+    modal.hide();
+  }, 2000);
+
+  // beep opcional
+  try {
+    if (beep) { beep.currentTime = 0; beep.play(); }
+  } catch(e){}
+}
+
+
+  function toast(msg, tipo="info") {
+    const old = document.getElementById("toast-msg");
+    if (old) old.remove();
+    const div = document.createElement("div");
+    div.id = "toast-msg";
+    div.className = `toast text-white position-fixed top-50 start-50 translate-middle px-4 py-3 bg-${tipo} show`;
+    div.style.zIndex = 9999;
+    div.innerText = msg;
+    document.body.appendChild(div);
+    setTimeout(()=>div.remove(), 1400);
+  }
+
+  function hoyLocalISO() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,"0");
+    const da = String(d.getDate()).padStart(2,"0");
+    return `${y}-${m}-${da}`;
+  }
+
+  // ---------- fetch productos ----------
+  async function cargarProductos() {
+    try {
+      // Intentamos endpoint productos (más universal). Filtramos por tipos que contengan "cigarro"
+      const r = await fetch("http://localhost:3000/api/productos");
+      const data = await r.json();
+      const arr = Array.isArray(data) ? data : [];
+
+      // aceptar distintos nombres: cigarros_paquete, cigarros_suelto, Cigarros, etc.
+      productos = arr.filter(p => {
+        const t = String(p.tipo || "").toLowerCase();
+        return t.includes("cigarro") || t.includes("cigarros");
+      });
+
+      productos.sort((a,b)=> (a.nombre||"").localeCompare(b.nombre||""));
+      productosById.clear();
+      productos.forEach(p => productosById.set(String(p.id), p));
+
+      // llenar select
+      productoSelect.innerHTML = `<option value="">Seleccionar producto...</option>`;
+      productos.forEach(p => {
+        // mostrar stock y tipo corto en el texto
+        const stockText = typeof p.stock !== "undefined" ? ` - ${Number(p.stock)}` : "";
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = `${p.nombre}${stockText}`;
+        opt.dataset.tipo = p.tipo || "";
+        opt.dataset.stock = p.stock || 0;
+        productoSelect.appendChild(opt);
+      });
+
+      if ($(productoSelect).data("select2")) $(productoSelect).select2("destroy");
+      $(productoSelect).select2({ width: "100%", placeholder: "Buscar producto..." });
+
+      // si hay scanner activo focus en input
+      if (inputScanner) inputScanner.focus();
+    } catch (err) {
+      console.error("Error cargar productos:", err);
+      toast("Error cargando productos", "danger");
+    }
+  }
+
+  // ---------- util precio/costo fijo ----------
+function precioUnitarioDesdeProducto(p) {
+    // 1) Si ya tiene precio_unitario en la base, usarlo SIEMPRE
+    if (p.precio_unitario && Number(p.precio_unitario) > 0) {
+        return Number(p.precio_unitario);
+    }
+
+    // 2) Si no existe, calcularlo SOLO UNA VEZ según el stock inicial
+    const stockInicial = Number(p.stock_inicial || 0);
+    const totalVenta = Number(p.precio_venta || 0);
+
+    if (stockInicial > 0 && totalVenta > 0) {
+        return Number(totalVenta / stockInicial);
+    }
+
+    // 3) Si no hay forma de calcular, fallback
+    return 0;
+}
+
+
+
+function costoUnitarioDesdeProducto(p) {
+    if (p.costo_unitario && Number(p.costo_unitario) > 0) {
+        return Number(p.costo_unitario);
+    }
+
+    const stockInicial = Number(p.stock_inicial || 0);
+    const totalCosto = Number(p.precio_costo || 0);
+
+    if (stockInicial > 0 && totalCosto > 0) {
+        return Number(totalCosto / stockInicial);
+    }
+
+    return 0;
+}
+
+
+
+  // ---------- UI updates ----------
+  function getProdSel() {
+    const id = productoSelect.value;
+    if (!id) return null;
+    return productosById.get(String(id)) || null;
+  }
+
+  function actualizarStockVisible() {
+    const p = getProdSel();
+    stockDisponible.value = p ? (Number(p.stock).toFixed(2)) : "";
+  }
+
+function calcularTotalMostrar() {
+  const p = getProdSel();
+  const cant = Number(cantidad.value || 0);
+  let tipo = tipoVenta.value || "";
+  if (!p || !cant || cant <= 0) { totalInput.value = ""; return; }
+
+  const tipoBD = String(p.tipo || "").toLowerCase();
+  if (!tipo) {
+    if (tipoBD.includes("paquete")) tipo = "paquete";
+    else if (tipoBD.includes("suelto")) tipo = "suelto";
+  }
+
+  const precioUnit = precioUnitarioDesdeProducto(p);
+  const costoUnit = costoUnitarioDesdeProducto(p);
+
+  let total = precioUnit * cant;
+  let ganancia = (precioUnit - costoUnit) * cant; // ❗ SIN RECARGO
+
+  const fp = (formaPago.value || "").toLowerCase();
+  if (fp.includes("tarjeta crédito") || fp.includes("tarjeta credito")) {
+    total *= 1.15;  // ❗ SOLO TOTAL LLEVA RECARGO
+  }
+
+  totalInput.value = total.toFixed(2);
+
+  totalInput.dataset.total = total.toFixed(2);
+  totalInput.dataset.ganancia = ganancia.toFixed(2); // ❗ SIN RECARGO
+  totalInput.dataset.precio_fijo_unitario = precioUnit;
+  totalInput.dataset.costo_fijo_unitario = costoUnit;
+  totalInput.dataset.tipo_venta = tipo;
+}
+
+
+
+  // ---------- Carrito UI ----------
+function actualizarTablaCarrito() {
+  tablaCarrito.innerHTML = "";
+  if (carrito.length === 0) {
+    tablaCarrito.innerHTML = `<tr><td colspan="6" class="text-muted">Carrito vacío.</td></tr>`;
+    subtotalCarrito.textContent = "0.00";
+    return;
+  }
+
+  let subtotal = 0;
+
+  carrito.forEach((it, idx) => {
+    const recargo = (formaPago.value === "Tarjeta Crédito") ? 1.15 : 1;
+
+    // TOTAL con recargo
+    const totalConRecargo = it.precio_fijo_unitario * it.cantidad * recargo;
+
+    // GANANCIA REAL SIN RECARGO
+    const gananciaReal = (it.precio_fijo_unitario - it.costo_fijo_unitario) * it.cantidad;
+
+    subtotal += totalConRecargo;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${it.nombre}</td>
+      <td>${it.cantidad}</td>
+      <td>$${Number(it.precio_fijo_unitario).toFixed(2)}</td>
+      <td>$${Number(totalConRecargo).toFixed(2)}</td>
+      <td>$${Number(gananciaReal).toFixed(2)}</td> <!-- SIN RECARGO -->
+      <td>
+        <button class="btn btn-sm btn-danger btn-eliminar" data-idx="${idx}">🗑️</button>
+      </td>
+    `;
+    tablaCarrito.appendChild(tr);
+  });
+
+  tablaCarrito.querySelectorAll(".btn-eliminar").forEach(btn => {
+    btn.onclick = () => {
+      const i = Number(btn.dataset.idx);
+      carrito.splice(i, 1);
+      actualizarTablaCarrito();
+    };
+  });
+
+  subtotalCarrito.textContent = subtotal.toFixed(2);
+}
+
+
+  // ---------- agregar al carrito ----------
+  btnAgregarCarrito.addEventListener("click", () => {
+    const p = getProdSel();
+    if (!p) return toast("Seleccioná un producto", "warning");
+    const cant = Number(cantidad.value || 0);
+    if (!cant || cant <= 0) return toast("Ingresá una cantidad válida", "warning");
+
+    let tipo = tipoVenta.value || "";
+    const tipoBD = String(p.tipo || "").toLowerCase();
+    if (!tipo) { // auto
+      tipo = tipoBD.includes("paquete") ? "paquete" : "suelto";
+    }
+
+    // stock check: si tipo es suelto y p.stock está en unidades sueltas, comparar directo.
+    // Si p.stock representa paquetes y venta suelto pide cigarrillos, convertimos.
+    let stockDisponibleNum = Number(p.stock || 0);
+    if (tipo === "suelto") {
+      // si p.tipo indica 'paquete' en BD pero user quiere suelto: convertir stock paquetes -> cigarrillos
+      if (tipoBD.includes("paquete") && !tipoBD.includes("suelto")) {
+        const cigarrosPorPaquete = 20;
+        stockDisponibleNum = stockDisponibleNum * cigarrosPorPaquete;
+      }
+      if (cant > stockDisponibleNum) return toast(`Stock insuficiente (solo ${stockDisponibleNum})`, "danger");
+    } else { // paquete
+      if (cant > stockDisponibleNum) return toast(`Stock insuficiente (solo ${stockDisponibleNum})`, "danger");
+    }
+
+    // precio y costo fijos
+    let precioUnidad = Number(totalInput.dataset.precio_fijo_unitario || 0);
+    let costoUnidad = Number(totalInput.dataset.costo_fijo_unitario || 0);
+    // si no estan en dataset, calculamos desde producto
+    if (!precioUnidad || precioUnidad <= 0) precioUnidad = precioUnitarioDesdeProducto(p);
+    if (!costoUnidad || costoUnidad <= 0) costoUnidad = costoUnitarioDesdeProducto(p);
+
+    // si el tipo es 'paquete' y nuestra lógica define precioUnidad por paquete, está ok.
+    carrito.push({
+      producto_id: Number(p.id),
+      nombre: p.nombre,
+      cantidad: cant,
+      tipo: tipo,
+      precio_fijo_unitario: precioUnidad,
+      costo_fijo_unitario: costoUnidad
+    });
+
+    actualizarTablaCarrito();
+    // limpiar inputs
+    cantidad.value = "";
+    totalInput.value = "";
+    totalInput.dataset.total = "";
+    totalInput.dataset.ganancia = "";
+    $(productoSelect).val("").trigger("change");
+    stockDisponible.value = "";
+  });
+
+// Confirmación moderna para CIGARROS
+function confirmarVaciarCarritoCigarros(titulo, mensaje) {
+  return new Promise(resolve => {
+    const bg = document.createElement("div");
+    bg.style.position = "fixed";
+    bg.style.top = 0;
+    bg.style.left = 0;
+    bg.style.width = "100%";
+    bg.style.height = "100%";
+    bg.style.background = "rgba(0,0,0,0.4)";
+    bg.style.display = "flex";
+    bg.style.justifyContent = "center";
+    bg.style.alignItems = "center";
+    bg.style.zIndex = "99999";
+
+    const box = document.createElement("div");
+    box.style.background = "white";
+    box.style.padding = "20px";
+    box.style.borderRadius = "10px";
+    box.style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
+    box.style.minWidth = "260px";
+    box.style.textAlign = "center";
+
+    box.innerHTML = `
+      <h5 class="mb-2">${titulo}</h5>
+      <p class="mb-3">${mensaje}</p>
+      <div class="d-flex justify-content-around mt-2">
+        <button id="btnConfSiCig" class="btn btn-danger">Vaciar</button>
+        <button id="btnConfNoCig" class="btn btn-secondary">Cancelar</button>
+      </div>
+    `;
+
+    bg.appendChild(box);
+    document.body.appendChild(bg);
+
+    document.getElementById("btnConfSiCig").onclick = () => {
+      bg.remove();
+      resolve(true);
+    };
+
+    document.getElementById("btnConfNoCig").onclick = () => {
+      bg.remove();
+      resolve(false);
+    };
+  });
+}
+
+// Reemplazo del botón actual
+btnVaciarCarrito.addEventListener("click", async () => {
+  if (!carrito.length) return;
+
+  const ok = await confirmarVaciarCarritoCigarros(
+    "Vaciar carrito",
+    "¿Seguro que querés borrar todo?"
+  );
+  if (!ok) return;
+
+  carrito = [];
+  actualizarTablaCarrito();
+});
+
+
+  // ---------- finalizar: venta directa o carrito ----------
+  async function ventaDirecta() {
+    const p = getProdSel();
+    if (!p) return toast("Seleccioná un producto", "warning");
+    const cant = Number(cantidad.value || 0);
+    const pago = formaPago.value;
+    if (!cant || cant <= 0) return toast("Ingresá una cantidad válida", "warning");
+    if (!pago) return toast("Elegí forma de pago", "warning");
+
+    // calcular total/ganancia ya (usar dataset o calcular)
+    calcularTotalMostrar();
+    const total = Number(totalInput.dataset.total || 0);
+    const ganancia = Number(totalInput.dataset.ganancia || 0);
+    const precio_fijo_unitario = Number(totalInput.dataset.precio_fijo_unitario || 0);
+    const costo_fijo_unitario = Number(totalInput.dataset.costo_fijo_unitario || 0);
+    try {
+      await fetch("http://localhost:3000/api/cigarros/venta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          producto_id: Number(p.id),
+          tipoVenta: totalInput.dataset.tipo_venta || tipoVenta.value || p.tipo,
+          cantidad: cant,
+          forma_pago: pago,
+          total: Number(total.toFixed(2)),
+          ganancia: Number(ganancia.toFixed(2)),
+          precio_fijo_unitario,
+          costo_fijo_unitario
+        })
+      });
+      toast("Venta registrada", "success");
+      cantidad.value = ""; totalInput.value = ""; $(productoSelect).val("").trigger("change"); stockDisponible.value="";
+      await cargarVentas(fechaFiltro.value || hoyLocalISO());
+      await cargarProductos();
+    } catch (err) {
+      console.error("Error registrar venta directa:", err);
+      toast("Error al registrar venta", "danger");
+    }
+  }
+
+async function finalizarVentaCarrito() {
+  const pago = formaPago.value;
+  if (!pago) return toast("Seleccioná forma de pago", "warning");
+  if (carrito.length === 0) return toast("No hay productos en el carrito", "warning");
+
+  try {
+    for (const item of carrito) {
+      const recargo = (pago === "Tarjeta Crédito") ? 1.15 : 1;
+
+      // TOTAL con recargo
+      const totalItem = item.precio_fijo_unitario * item.cantidad * recargo;
+
+      // GANANCIA REAL (precio - costo) * cantidad
+      const gananciaReal = (item.precio_fijo_unitario - item.costo_fijo_unitario) * item.cantidad;
+
+      await fetch("http://localhost:3000/api/cigarros/venta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          producto_id: Number(item.producto_id),
+          tipoVenta: item.tipo,
+          cantidad: item.cantidad,
+          forma_pago: pago,
+          total: Number(totalItem.toFixed(2)),
+          ganancia: Number(gananciaReal.toFixed(2)),  // ❗ SIN RECARGO
+          precio_fijo_unitario: Number(item.precio_fijo_unitario),
+          costo_fijo_unitario: Number(item.costo_fijo_unitario)
+        })
+      });
+    }
+
+    carrito = [];
+    actualizarTablaCarrito();
+    toast("Venta finalizada", "success");
+    await cargarVentas(fechaFiltro.value || hoyLocalISO());
+    await cargarProductos();
+
+  } catch (err) {
+    console.error("Error finalizar carrito:", err);
+    toast("Error al registrar ventas", "danger");
+  }
+}
+
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (carrito.length > 0) {
+      await finalizarVentaCarrito();
+      return;
+    }
+    await ventaDirecta();
+  });
+
+  // ---------- obtener/listar ventas ----------
+  async function cargarVentas(fecha=null) {
+    try {
+      const url = fecha ? `http://localhost:3000/api/cigarros/ventas?fecha=${fecha}` : "http://localhost:3000/api/cigarros/ventas";
+      const r = await fetch(url);
+      const data = await r.json();
+      ventasLista = Array.isArray(data) ? data : [];
+      mostrarVentas(ventasLista);
+    } catch (err) {
+      console.error("Error cargar ventas:", err);
+      toast("Error al obtener ventas", "danger");
+      mostrarVentas([]);
+    }
+  }
+
+  function mostrarVentas(lista) {
+    tablaVentas.innerHTML = "";
+    if (!lista.length) {
+      tablaVentas.innerHTML = `<tr><td colspan="8" class="text-muted text-center">Sin ventas.</td></tr>`;
+      totalVendido.textContent = "0.00";
+      totalGanancia.textContent = "0.00";
+      return;
+    }
+    let total = 0, gan = 0;
+lista.forEach(v => {
+  total += Number(v.total || 0);
+  gan += Number(v.ganancia || 0);
+
+  // 🔥 Fecha formateada "DD/MM - HH:MM"
+  let fechaOriginal = v.fecha || ""; // "2025-11-24 15:12:33"
+  let soloFecha = fechaOriginal.split(" ")[0]; // "2025-11-24"
+  let partes = soloFecha.split("-"); // ["2025","11","24"]
+  let fechaFormateada = `${partes[2]}/${partes[1]}`; // "24/11"
+  let horaMin = v.hora_minuto || ""; // "15:12"
+  const fechaHora = `${fechaFormateada} - ${horaMin}`; // "24/11 - 15:12"
+
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td>${fechaHora}</td>
+    <td>${v.nombre_producto}</td>
+    <td>${v.tipo}</td>
+    <td>${v.cantidad}</td>
+    <td>${v.forma_pago}</td>
+    <td>$${Number(v.total || 0).toFixed(2)}</td>
+    <td>$${Number(v.ganancia || 0).toFixed(2)}</td>
+  `;
+  tablaVentas.appendChild(tr);
+});
+
+    totalVendido.textContent = total.toFixed(2);
+    totalGanancia.textContent = gan.toFixed(2);
+  }
+
+  // ---------- cierre de caja ----------
+  btnValidarCaja?.addEventListener("click", () => {
+    if (passCaja && passCaja.value !== PASS_CAJA) {
+      toast("Contraseña incorrecta", "danger");
+      return;
+    }
+    if (passCaja) passCaja.value = "";
+    // hide modal password
+    const modalPassEl = document.getElementById("modalPasswordCaja");
+    if (modalPassEl && window.bootstrap) {
+      const modalPass = bootstrap.Modal.getInstance(modalPassEl);
+      if (modalPass) modalPass.hide();
+    }
+    calcularCierreCaja();
+    const modalCajaEl = document.getElementById("modalCierreCaja");
+    if (modalCajaEl && window.bootstrap) new bootstrap.Modal(modalCajaEl).show();
+  });
+
+  async function calcularCierreCaja() {
+    try {
+      const fecha = fechaFiltro.value || hoyLocalISO();
+      const r = await fetch(`http://localhost:3000/api/cigarros/ventas?fecha=${fecha}`);
+      const lista = await r.json();
+      let efectivo=0, transferencia=0, debito=0, credito=0, totalV=0, gan=0;
+      lista.forEach(v=>{
+        const tv = Number(v.total || 0);
+        const gv = Number(v.ganancia || 0);
+        const fp = String(v.forma_pago || "").toLowerCase();
+        if (fp.includes("efectivo")) efectivo += tv;
+        else if (fp.includes("transfer")) transferencia += tv;
+        else if (fp.includes("débito") || fp.includes("debito")) debito += tv;
+        else if (fp.includes("crédito") || fp.includes("credito")) credito += tv;
+        totalV += tv;
+        gan += gv;
+      });
+
+      contenidoCierreCaja.innerHTML = `
+        <p class="mb-3 text-muted">Fecha seleccionada: <strong>${fecha}</strong></p>
+        <div class="row g-3 mb-3">
+          <div class="col-md-3"><div class="border rounded p-3 bg-light"><h6 class="mb-1">Efectivo</h6><p class="fs-5 mb-0">$${efectivo.toFixed(2)}</p></div></div>
+          <div class="col-md-3"><div class="border rounded p-3 bg-light"><h6 class="mb-1">Transferencia</h6><p class="fs-5 mb-0">$${transferencia.toFixed(2)}</p></div></div>
+          <div class="col-md-3"><div class="border rounded p-3 bg-light"><h6 class="mb-1">Tarjeta Débito</h6><p class="fs-5 mb-0">$${debito.toFixed(2)}</p></div></div>
+          <div class="col-md-3"><div class="border rounded p-3 bg-light"><h6 class="mb-1">Tarjeta Crédito</h6><p class="fs-5 mb-0">$${credito.toFixed(2)}</p></div></div>
+        </div>
+        <div class="border rounded p-3">
+          <h5 class="fw-bold text-primary mb-2">Resumen general</h5>
+          <p class="mb-1">Total vendido: <strong>$${totalV.toFixed(2)}</strong></p>
+          <p class="mb-0 text-success">Ganancia total: <strong>$${gan.toFixed(2)}</strong></p>
+        </div>
+      `;
+    } catch (err) {
+      console.error(err);
+      toast("Error al calcular cierre de caja", "danger");
+    }
+  }
+
+  // ---------- scanner simple (keyboard wedge) ----------
+  if (inputScanner) {
+    inputScanner.addEventListener("keypress", (e) => {
+      if (scannerTimeout) clearTimeout(scannerTimeout);
+      if (e.key === "Enter") {
+        const code = scannerBuffer.trim();
+        scannerBuffer = "";
+        if (!code) return;
+        buscarPorCodigo(code);
+        return;
+      }
+      scannerBuffer += e.key;
+      scannerTimeout = setTimeout(()=> scannerBuffer = "", 80);
+    });
+  }
+  
+
+  async function buscarPorCodigo(code) {
+    // buscar entre productos cargados primero
+    const prod = productos.find(p => String(p.codigo_barra || "") === String(code));
+    if (prod) {
+      if (beep) try { beep.currentTime = 0; beep.play(); } catch(e){}
+      $(productoSelect).val(prod.id).trigger("change");
+      actualizarStockVisible();
+      calcularTotalMostrar();
+      return;
+    }
+    // si no está en memoria, intentar buscar en server por codigo
+    try {
+      const r = await fetch(`http://localhost:3000/api/productos?codigo=${encodeURIComponent(code)}`);
+      const d = await r.json();
+      if (Array.isArray(d) && d.length) {
+        const p = d[0];
+        await cargarProductos();
+        $(productoSelect).val(p.id).trigger("change");
+        actualizarStockVisible();
+        calcularTotalMostrar();
+        if (beep) try { beep.currentTime = 0; beep.play(); } catch(e){}
+        return;
+      }
+      toast("Código no encontrado", "danger");
+    } catch (err) {
+      console.error("buscarPorCodigo err", err);
+      toast("Error buscando producto", "danger");
+    }
+  }
+
+  // ---------- eventos UI ----------
+  $(productoSelect).on("select2:select", () => {
+    actualizarStockVisible();
+    calcularTotalMostrar();
+  });
+  productoSelect.addEventListener("change", () => {
+    const p = getProdSel();
+    if (!p) return;
+
+    const tipoBD = String(p.tipo).toLowerCase();
+
+    if (tipoBD.includes("paquete")) {
+        tipoVenta.value = "paquete";
+    } else if (tipoBD.includes("suelto")) {
+        tipoVenta.value = "suelto";
+    } else {
+        tipoVenta.value = ""; // automático si vos querés
+    }
+
+    actualizarStockVisible();
+    calcularTotalMostrar();
+});
+  tipoVenta.addEventListener("change", calcularTotalMostrar);
+  cantidad.addEventListener("input", calcularTotalMostrar);
+  formaPago.addEventListener("change", ()=>{ calcularTotalMostrar(); actualizarTablaCarrito(); });
+
+  btnBuscarFecha.addEventListener("click", ()=> {
+    if (!fechaFiltro.value) return toast("Seleccioná una fecha", "warning");
+    cargarVentas(fechaFiltro.value);
+  });
+  btnHoy.addEventListener("click", ()=> {
+    fechaFiltro.value = hoyLocalISO();
+    cargarVentas(fechaFiltro.value);
+  });
+
+  // inicializar
+  (async () => {
+    await cargarProductos();
+    fechaFiltro.value = hoyLocalISO();
+    await cargarVentas(fechaFiltro.value);
+    actualizarTablaCarrito();
+  })();
+});

@@ -1,0 +1,66 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v7.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v7.0": {
+      "SistemaNegocio/1.0.0": {
+        "dependencies": {
+          "Microsoft.Web.WebView2": "1.0.2151.40"
+        },
+        "runtime": {
+          "SistemaNegocio.dll": {}
+        }
+      },
+      "Microsoft.Web.WebView2/1.0.2151.40": {
+        "runtime": {
+          "lib/netcoreapp3.0/Microsoft.Web.WebView2.Core.dll": {
+            "assemblyVersion": "1.0.2151.40",
+            "fileVersion": "1.0.2151.40"
+          },
+          "lib/netcoreapp3.0/Microsoft.Web.WebView2.WinForms.dll": {
+            "assemblyVersion": "1.0.2151.40",
+            "fileVersion": "1.0.2151.40"
+          },
+          "lib/netcoreapp3.0/Microsoft.Web.WebView2.Wpf.dll": {
+            "assemblyVersion": "1.0.2151.40",
+            "fileVersion": "1.0.2151.40"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/win-arm64/native/WebView2Loader.dll": {
+            "rid": "win-arm64",
+            "assetType": "native",
+            "fileVersion": "1.0.2151.40"
+          },
+          "runtimes/win-x64/native/WebView2Loader.dll": {
+            "rid": "win-x64",
+            "assetType": "native",
+            "fileVersion": "1.0.2151.40"
+          },
+          "runtimes/win-x86/native/WebView2Loader.dll": {
+            "rid": "win-x86",
+            "assetType": "native",
+            "fileVersion": "1.0.2151.40"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "SistemaNegocio/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.Web.WebView2/1.0.2151.40": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-OPWjZVJvYhDm4Jq+7QdsQfEgv2QHrkaqUkdk4i9FahatsOJ4cIaVLfnDHGsKjcxGqCVX+Lo4mi4Lqh5hcgfsdw==",
+      "path": "microsoft.web.webview2/1.0.2151.40",
+      "hashPath": "microsoft.web.webview2.1.0.2151.40.nupkg.sha512"
+    }
+  }
+}

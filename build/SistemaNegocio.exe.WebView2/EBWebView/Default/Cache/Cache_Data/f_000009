@@ -1,0 +1,686 @@
+document.addEventListener("DOMContentLoaded", () => {
+  const formSuelto      = document.getElementById("formSuelto");
+  const selectProducto  = document.getElementById("productoSelect");
+  const stockDisponible = document.getElementById("stockDisponible");
+  const gramosInput     = document.getElementById("gramos");
+  const unidadSelect    = document.getElementById("unidad");
+  const precioInput     = document.getElementById("precio");
+  const formaPago       = document.getElementById("formaPago");
+  const tablaVentas     = document.getElementById("tablaVentas");
+  const totalVendido    = document.getElementById("totalVendido");
+  const totalGanancia   = document.getElementById("totalGanancia");
+  const fechaFiltro     = document.getElementById("fechaFiltro");
+  const btnBuscarFecha  = document.getElementById("btnBuscarFecha");
+  const btnHoy          = document.getElementById("btnHoy");
+  const tablaCarrito    = document.getElementById("tablaCarrito");
+  const subtotalElem    = document.getElementById("subtotalCarrito");
+  let productos = [];
+  let productosById = new Map();
+  let carritoSuelto = [];
+  let bufferScanner = "";
+  let scannerTimeout;
+  // ===============================
+// 🔵 SCANNER SOLO PARA CONSULTAR PRECIOS (NO AGREGA, NO DESCUENTA, NO TOCA NADA)
+// ===============================
+let bufferPrecio = "";
+let timeoutPrecio = null;
+
+document.addEventListener("keypress", (e) => {
+  if (timeoutPrecio) clearTimeout(timeoutPrecio);
+
+  if (e.key === "Enter") {
+    mostrarPrecioScanner(bufferPrecio.trim());
+    bufferPrecio = "";
+    return;
+  }
+
+  bufferPrecio += e.key;
+  timeoutPrecio = setTimeout(() => bufferPrecio = "", 80);
+});
+function mostrarPrecioScanner(codigo) {
+  if (!codigo) return;
+
+  // buscar producto por código
+  const p = productos.find(prod => String(prod.codigo_barra || "") === codigo);
+
+  if (!p) {
+    toast("Producto no encontrado", "danger");
+    return;
+  }
+
+  // precio referencia (100g)
+  let precio = 0;
+
+  if (p.precio_gramo && p.precio_gramo > 0) {
+    precio = Number(p.precio_gramo) * 100; 
+  } else {
+    const stockIni = Number(p.stock_inicial);
+    const precioVenta = Number(p.precio_venta);
+    if (stockIni > 0 && precioVenta > 0) {
+      const precioGramo = precioVenta / (stockIni * 1000);
+      precio = precioGramo * 100;
+    }
+  }
+
+  // mostrar en modal
+  document.getElementById("precioScannerNombre").innerText = p.nombre;
+  document.getElementById("precioScannerValor").innerText = "$" + precio.toFixed(2);
+
+  const modal = new bootstrap.Modal(document.getElementById("modalPrecioScanner"));
+  modal.show();
+
+  // 🔥 Auto-cerrar en 2 segundos
+  setTimeout(() => {
+    modal.hide();
+  }, 2000);
+
+  // beep opcional
+  try {
+    const beep = new Audio("/sounds/beep.mp3");
+    beep.play();
+  } catch (err) {}
+}
+
+
+
+  function playBeep() {
+    const a = new Audio("/sounds/beep.mp3");
+    a.volume = 0.6;
+    a.play();
+  }
+
+  document.addEventListener("keypress", e => {
+    if (scannerTimeout) clearTimeout(scannerTimeout);
+    if (e.key === "Enter") {
+      buscarPorCodigoBarra(bufferScanner.trim());
+      bufferScanner = "";
+      return;
+    }
+    bufferScanner += e.key;
+    scannerTimeout = setTimeout(() => bufferScanner = "", 80);
+  });
+
+  async function buscarPorCodigoBarra(codigo) {
+    if (!codigo) return;
+
+    const producto = productos.find(p => String(p.codigo_barra) === codigo);
+
+    if (!producto) {
+      playError();
+      return toast("Producto no encontrado", "danger");
+    }
+
+    $(selectProducto).val(producto.id).trigger("change");
+    playBeep();
+  }
+
+  const toNumber = val => val ? Number(String(val).replace(",", ".")) : 0;
+
+  const isoHoy = () =>
+    new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+      .toISOString()
+      .split("T")[0];
+
+  // Mostrar notificación
+  function toast(msg, tipo = "info") {
+    const old = document.getElementById("toast-msg");
+    if (old) old.remove();
+    const div = document.createElement("div");
+    div.id = "toast-msg";
+    div.className = `toast align-items-center text-white border-0 show position-fixed top-50 start-50 translate-middle fs-5 px-4 py-3 bg-${tipo}`;
+    div.style.zIndex = 9999;
+    div.style.minWidth = "350px";
+    div.style.textAlign = "center";
+    div.style.boxShadow = "0 0 15px rgba(0,0,0,0.3)";
+    div.innerHTML = `<div class="d-flex justify-content-center align-items-center"><div class="toast-body fw-semibold">${msg}</div></div>`;
+    document.body.appendChild(div);
+    setTimeout(() => {
+      div.style.transition = "opacity 0.5s";
+      div.style.opacity = "0";
+      setTimeout(() => div.remove(), 500);
+    }, 1200);
+  }
+
+  async function cargarProductosSueltos() {
+    try {
+      // ✅ Usamos la ruta que ya existe en tu server
+      const res = await fetch("http://localhost:3000/api/sueltos");
+
+      if (!res.ok) throw new Error("Error HTTP " + res.status);
+      const data = await res.json();
+
+      // ✅ Aseguramos que sea un array
+      const lista = Array.isArray(data) ? data : [];
+
+      // ✅ Solo productos con stock disponible
+      const productosFiltrados = lista.filter(p => Number(p.stock) > 0);
+
+      // ✅ Ordenar por nombre
+      productosFiltrados.sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+      productos = productosFiltrados;
+
+      // ✅ Llenar el select
+      selectProducto.innerHTML = `<option value="">Seleccionar producto</option>`;
+      productos.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = `${p.nombre} (${Number(p.stock).toFixed(2)} kg)`;
+        selectProducto.appendChild(opt);
+      });
+
+      // ✅ Mapa rápido para acceso por ID
+      productosById.clear();
+      productos.forEach(p => productosById.set(String(p.id), p));
+
+      // ✅ Activar Select2
+      $(selectProducto).select2({
+        theme: "bootstrap-5",
+        width: "100%",
+        placeholder: "Buscar producto...",
+        allowClear: true
+      });
+
+    } catch (err) {
+      console.error("Error cargando productos sueltos:", err);
+      toast("Error cargando productos", "danger");
+      selectProducto.innerHTML = `<option value="">Seleccionar producto</option>`;
+      productos = [];
+      productosById.clear();
+    }
+  }
+
+  function getProdSel() {
+    return productosById.get(String(selectProducto.value)) || null;
+  }
+
+  function getPrecioPorKilo(p) {
+    return Number(p.precio_kilo) || 0;
+  }
+
+  function getCostoPorKilo(p) {
+    return Number(p.costo_kilo) || 0;
+  }
+
+  function getPrecioPorGramo(p) {
+    if (p.precio_gramo && p.precio_gramo > 0) return Number(p.precio_gramo);
+
+    const stockInicial = Number(p.stock_inicial);
+    const precioVenta = Number(p.precio_venta);
+    if (stockInicial > 0 && precioVenta > 0) {
+      return precioVenta / (stockInicial * 1000);
+    }
+    return 0;
+  }
+
+  function getCostoPorGramo(p) {
+    if (p.costo_gramo && p.costo_gramo > 0) return Number(p.costo_gramo);
+
+    const stockInicial = Number(p.stock_inicial);
+    const precioCosto = Number(p.precio_costo);
+    if (stockInicial > 0 && precioCosto > 0) {
+      return precioCosto / (stockInicial * 1000);
+    }
+    return 0;
+  }
+
+  function actualizarStockVisible() {
+    const p = getProdSel();
+    stockDisponible.value = p ? Number(p.stock).toFixed(2) : "";
+    calcularPrecio();
+  }
+
+  function calcularPrecio() {
+    const p = getProdSel();
+    if (!p) { precioInput.value = ""; return; }
+
+    let cant = toNumber(gramosInput.value);
+    if (isNaN(cant) || cant <= 0) { precioInput.value = ""; return; }
+
+    if (unidadSelect.value === "kg") cant *= 1000;
+
+    // ---------- PRECIO FIJO POR GRAMO ----------
+    let precioGramo = Number(p.precio_gramo);
+
+    // Si no existe en BD, calcularlo una sola vez con stock_inicial
+    if (!precioGramo || isNaN(precioGramo) || precioGramo <= 0) {
+      const stockIni = Number(p.stock_inicial);
+      if (stockIni > 0) {
+        precioGramo = Number(p.precio_venta) / (stockIni * 1000);
+      } else {
+        precioInput.value = "";
+        return;
+      }
+    }
+
+    // ---------- TOTAL ----------
+    let total = cant * precioGramo;
+
+    const fp = (formaPago.value || "").toLowerCase();
+    if (fp.includes("tarjeta crédito")) total *= 1.15;
+
+    precioInput.value = total.toFixed(2);
+  }
+
+function actualizarTablaCarrito() {
+  tablaCarrito.innerHTML = "";
+  let subtotal = 0;
+
+  carritoSuelto.forEach((item, idx) => {
+    let total = item.cantidad_gramos * item.precio_fijo_gramo;
+    subtotal += total;
+
+    const precioKilo = item.precio_fijo_gramo * 1000;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${item.producto.nombre}</td>
+      <td>${item.cantidad_gramos.toFixed(0)} g</td>
+      <td>$${precioKilo.toFixed(2)}</td>
+      <td>$${total.toFixed(2)}</td>
+      <td>
+        <button class="btn btn-danger btn-sm btn-eliminar-carrito" data-idx="${idx}">
+          <i class="bi bi-trash-fill"></i>
+        </button>
+      </td>
+    `;
+    tablaCarrito.appendChild(tr);
+  });
+
+  subtotalElem.textContent = subtotal.toFixed(2);
+
+  document.querySelectorAll(".btn-eliminar-carrito").forEach(btn => {
+    btn.onclick = () => {
+      const index = Number(btn.dataset.idx);
+      carritoSuelto.splice(index, 1);
+      actualizarTablaCarrito();
+    };
+  });
+}
+
+
+  document.getElementById("btnAgregarCarrito").addEventListener("click", () => {
+    const p = getProdSel();
+    if (!p) return toast("Seleccioná un producto", "warning");
+
+    let cantidad_gramos = toNumber(gramosInput.value);
+    if (unidadSelect.value === "kg") cantidad_gramos *= 1000;
+    if (cantidad_gramos <= 0) return toast("Ingresá cantidad válida", "warning");
+
+    const precioGramo = getPrecioPorGramo(p);
+    const costoGramo = getCostoPorGramo(p);
+
+    if (!precioGramo || precioGramo <= 0) {
+      return toast("⚠ Este producto no tiene precio correcto configurado", "danger");
+    }
+
+    carritoSuelto.push({
+      producto: p,
+      cantidad_gramos,
+      forma_pago: formaPago.value || "Efectivo",
+      precio_fijo_gramo: precioGramo,
+      costo_fijo_gramo: costoGramo
+    });
+
+    actualizarTablaCarrito();
+
+    gramosInput.value = "";
+    precioInput.value = "";
+    stockDisponible.value = p ? Number(p.stock).toFixed(2) : "";
+  });
+
+// Confirmación moderna (igual que en ventas.js)
+function confirmarVaciarSueltos(titulo, mensaje) {
+  return new Promise(resolve => {
+    const bg = document.createElement("div");
+    bg.style.position = "fixed";
+    bg.style.top = 0;
+    bg.style.left = 0;
+    bg.style.width = "100%";
+    bg.style.height = "100%";
+    bg.style.background = "rgba(0,0,0,0.4)";
+    bg.style.display = "flex";
+    bg.style.justifyContent = "center";
+    bg.style.alignItems = "center";
+    bg.style.zIndex = "99999";
+
+    const box = document.createElement("div");
+    box.style.background = "white";
+    box.style.padding = "20px";
+    box.style.borderRadius = "10px";
+    box.style.boxShadow = "0 4px 12px rgba(0,0,0,0.3)";
+    box.style.minWidth = "260px";
+    box.style.textAlign = "center";
+    box.innerHTML = `
+      <h5 class="mb-2">${titulo}</h5>
+      <p class="mb-3">${mensaje}</p>
+      <div class="d-flex justify-content-around mt-2">
+        <button id="btnConfSiSuelto" class="btn btn-danger">Vaciar</button>
+        <button id="btnConfNoSuelto" class="btn btn-secondary">Cancelar</button>
+      </div>
+    `;
+
+    bg.appendChild(box);
+    document.body.appendChild(bg);
+
+    document.getElementById("btnConfSiSuelto").onclick = () => {
+      bg.remove();
+      resolve(true);
+    };
+    document.getElementById("btnConfNoSuelto").onclick = () => {
+      bg.remove();
+      resolve(false);
+    };
+  });
+}
+
+document.getElementById("btnVaciarCarrito").addEventListener("click", async () => {
+  if (carritoSuelto.length === 0) return;
+
+  const ok = await confirmarVaciarSueltos(
+    "Vaciar carrito",
+    "¿Seguro que querés eliminar todos los productos?"
+  );
+  if (!ok) return;
+
+  carritoSuelto = [];
+  actualizarTablaCarrito();
+});
+
+
+async function guardarVentaDirecta(item, formaPagoGlobal) {
+
+    // Total con o sin recargo (solo al total)
+    let total = item.cantidad_gramos * item.precio_fijo_gramo;
+
+    if ((formaPagoGlobal || "").toLowerCase().includes("tarjeta crédito")) {
+      total *= 1.15;  // ❗ SOLO EL TOTAL TIENE RECARGO
+    }
+
+    // Ganancia real (precio - costo) * gramos
+    // ❗ SIN RECARGO
+    const gananciaBase =
+      item.cantidad_gramos *
+      (item.precio_fijo_gramo - item.costo_fijo_gramo);
+
+    // Ganancia final NUNCA lleva recargo
+    const gananciaFinal = gananciaBase;
+
+    const payload = {
+      producto_id: item.producto.id,
+      cantidad_gramos: item.cantidad_gramos,
+      forma_pago: formaPagoGlobal,
+      total: Number(total.toFixed(2)),
+      ganancia: Number(gananciaFinal.toFixed(2)),
+      precio_fijo_gramo: Number(item.precio_fijo_gramo) // OBLIGATORIO
+    };
+
+    console.log("PAYLOAD ENVIADO A http://localhost:3000/api/sueltos/venta =>", JSON.stringify(payload, null, 2));
+
+    await fetch("http://localhost:3000/api/sueltos/venta", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+}
+  formSuelto.addEventListener("submit", async e => {
+    e.preventDefault();
+
+    const formaPagoGlobal = formaPago.value || "Efectivo";
+
+    try {
+      if (carritoSuelto.length) {
+
+        for (let item of carritoSuelto) {
+          await guardarVentaDirecta(item, formaPagoGlobal);
+        }
+
+        // cálculo del subtotal FINAL usando precio fijo
+        let subtotalFinal = carritoSuelto.reduce((acc, item) =>
+          acc + (item.cantidad_gramos * item.precio_fijo_gramo), 0);
+
+        if (formaPagoGlobal.toLowerCase().includes("tarjeta crédito")) {
+          subtotalFinal *= 1.15;
+        }
+
+        subtotalElem.textContent = subtotalFinal.toFixed(2);
+        carritoSuelto = [];
+
+      } else {
+        let cantidad_gramos = toNumber(gramosInput.value);
+        if (unidadSelect.value === "kg") cantidad_gramos *= 1000;
+        if (cantidad_gramos <= 0) return toast("Ingresá cantidad válida", "warning");
+
+        const p = getProdSel();
+
+        await guardarVentaDirecta({
+          producto: p,
+          cantidad_gramos,
+          forma_pago: formaPagoGlobal,
+          precio_fijo_gramo: getPrecioPorGramo(p),
+          costo_fijo_gramo: getCostoPorGramo(p)
+        }, formaPagoGlobal);
+      }
+
+      toast("✅ Venta registrada correctamente", "success");
+      actualizarTablaCarrito();
+      formSuelto.reset();
+      $(selectProducto).val(null).trigger("change");
+      await cargarProductosSueltos();
+      await obtenerVentas(fechaFiltro.value || isoHoy());
+
+    } catch (err) {
+      console.error(err);
+      toast("Error al registrar venta", "danger");
+    }
+  });
+
+  async function obtenerVentas(fecha = null) {
+    try {
+      const r = await fetch(`http://localhost:3000/api/sueltos/ventas?fecha=${fecha || isoHoy()}`);
+      const lista = await r.json();
+      mostrarVentas(Array.isArray(lista) ? lista : []);
+    } catch (err) {
+      console.error("Error obteniendo ventas:", err);
+      mostrarVentas([]);
+    }
+  }
+
+  function mostrarVentas(lista) {
+    tablaVentas.innerHTML = "";
+    let sumaTotal = 0, sumaGanancia = 0;
+
+    if (!lista.length) {
+      tablaVentas.innerHTML = `
+        <tr>
+          <td colspan="7" class="text-center text-muted py-3">
+            No hay ventas registradas.
+          </td>
+        </tr>`;
+      totalVendido.textContent = "0.00";
+      totalGanancia.textContent = "0.00";
+      return;
+    }
+
+    lista.forEach(v => {
+      const total = Number(v.total) || 0;
+      const ganancia = Number(v.ganancia) || 0;
+      sumaTotal += total;
+      sumaGanancia += ganancia;
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${v.fecha}</td>
+        <td>${v.nombre_producto}</td>
+        <td>${Number(v.cantidad_gramos).toFixed(0)} g</td>
+        <td>${v.forma_pago}</td>
+        <td>$${total.toFixed(2)}</td>
+        <td>$${ganancia.toFixed(2)}</td>
+      `;
+      tablaVentas.appendChild(tr);
+    });
+
+    totalVendido.textContent = sumaTotal.toFixed(2);
+    totalGanancia.textContent = sumaGanancia.toFixed(2);
+  }
+
+  // ===============================
+// 🔒 CIERRE DE CAJA SUELTOS
+// ===============================
+const PASS_CAJA = "Emanuel2025";
+
+const modalPassEl     = document.getElementById("modalPasswordCaja");
+const modalCierreEl   = document.getElementById("modalCierreCaja");
+const inputPassCaja   = document.getElementById("passCaja");
+const btnValidarCaja  = document.getElementById("btnValidarCaja");
+
+// 👉 MOSTRAR MODAL DE CIERRE DE CAJA
+function abrirModalCierreCaja() {
+    if (!modalCierreEl) return;
+    const modalCierre = bootstrap.Modal.getOrCreateInstance(modalCierreEl);
+    modalCierre.show();
+}
+
+// 👉 GENERAR CIERRE DE CAJA
+async function generarCierreCaja() {
+
+    const hoy = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+                    .toISOString().split("T")[0];
+
+    try {
+        const res = await fetch(`http://localhost:3000/api/sueltos/ventas?fecha=${hoy}`);
+        if (!res.ok) throw new Error("Error HTTP " + res.status);
+
+        const ventas = await res.json();
+
+        let efectivo = 0, transferencia = 0, debito = 0, credito = 0;
+        let totalV = 0, ganancia = 0;
+
+        ventas.forEach(v => {
+            const t = Number(v.total);
+            const g = Number(v.ganancia);
+            const fp = (v.forma_pago || "").toLowerCase();
+
+            if (fp.includes("efectivo")) efectivo += t;
+            else if (fp.includes("transferencia")) transferencia += t;
+            else if (fp.includes("débito") || fp.includes("debito")) debito += t;
+            else if (fp.includes("crédito") || fp.includes("credito")) credito += t;
+
+            totalV += t;
+            ganancia += g;
+        });
+
+        document.getElementById("contenidoCierreCaja").innerHTML = `
+            <p class="mb-3 text-muted">Fecha seleccionada: <strong>${hoy}</strong></p>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-3">
+                    <div class="border rounded p-3 bg-light">
+                        <h6 class="mb-1">Efectivo</h6>
+                        <p class="fs-5 mb-0">$${efectivo.toFixed(2)}</p>
+                    </div>
+                </div>
+
+                <div class="col-md-3">
+                    <div class="border rounded p-3 bg-light">
+                        <h6 class="mb-1">Transferencia</h6>
+                        <p class="fs-5 mb-0">$${transferencia.toFixed(2)}</p>
+                    </div>
+                </div>
+
+                <div class="col-md-3">
+                    <div class="border rounded p-3 bg-light">
+                        <h6 class="mb-1">Tarjeta Débito</h6>
+                        <p class="fs-5 mb-0">$${debito.toFixed(2)}</p>
+                    </div>
+                </div>
+
+                <div class="col-md-3">
+                    <div class="border rounded p-3 bg-light">
+                        <h6 class="mb-1">Tarjeta Crédito</h6>
+                        <p class="fs-5 mb-0">$${credito.toFixed(2)}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border rounded p-3">
+                <h5 class="fw-bold text-primary mb-2">Resumen general</h5>
+                <p class="mb-1">Total vendido: <strong>$${totalV.toFixed(2)}</strong></p>
+                <p class="mb-0 text-success">Ganancia total: <strong>$${ganancia.toFixed(2)}</strong></p>
+            </div>
+        `;
+
+        abrirModalCierreCaja();
+
+    } catch (err) {
+        console.error("Error generando cierre de caja:", err);
+        toast("Error generando cierre de caja", "danger");
+    }
+}
+
+// 👉 VALIDAR CONTRASEÑA
+if (btnValidarCaja && inputPassCaja && modalPassEl) {
+
+    const handlerValidar = () => {
+        const pass = inputPassCaja.value.trim();
+
+        if (pass !== PASS_CAJA) {
+            alert("❌ Contraseña incorrecta");
+            inputPassCaja.focus();
+            inputPassCaja.select();
+            return;
+        }
+
+        // Ocultar modal de contraseña
+        const modalPass = bootstrap.Modal.getOrCreateInstance(modalPassEl);
+        modalPass.hide();
+
+        generarCierreCaja();
+    };
+
+    btnValidarCaja.addEventListener("click", handlerValidar);
+
+    inputPassCaja.addEventListener("keydown", e => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            handlerValidar();
+        }
+    });
+}
+
+// 👉 SIEMPRE VOLVER A PEDIR LA CONTRASEÑA
+document.getElementById("modalCierreCaja")
+.addEventListener("hidden.bs.modal", () => {
+
+    // Limpiar el campo de contraseña
+    if (inputPassCaja) inputPassCaja.value = "";
+
+    // Resetear instancia del modal para un futuro uso
+    bootstrap.Modal.getOrCreateInstance(modalPassEl);
+
+    // NO mostrar automáticamente — solo cuando el usuario aprieta "Cierre de caja"
+});
+
+  // ===============================
+  // EVENTOS DE FILTRO FECHA
+  // ===============================
+  btnBuscarFecha.addEventListener("click", () => {
+    if (!fechaFiltro.value) return toast("Seleccioná una fecha", "warning");
+    obtenerVentas(fechaFiltro.value);
+  });
+
+  btnHoy.addEventListener("click", () => {
+    fechaFiltro.value = isoHoy();
+    obtenerVentas(isoHoy());
+  });
+
+  $(selectProducto).on("select2:select", actualizarStockVisible);
+  selectProducto.addEventListener("change", actualizarStockVisible);
+  gramosInput.addEventListener("input", calcularPrecio);
+  unidadSelect.addEventListener("change", calcularPrecio);
+
+  cargarProductosSueltos().then(() => {
+    fechaFiltro.value = isoHoy();
+    obtenerVentas(isoHoy());
+  });
+});

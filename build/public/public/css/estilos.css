@@ -1,0 +1,365 @@
+:root {
+  --azul-oscuro: #122543;
+  --azul-medio:  #234c88;
+  --azul-acento: #2563eb;
+  --azul-suave:  #e7f1ff;
+  --panel-bg:    #f8fbff;
+  --sombra-fuerte: 0 22px 60px rgba(15, 23, 42, 0.25);
+  --sombra-suave:  0 10px 30px rgba(15, 23, 42, 0.18);
+  --radius-panel:  26px;
+  --transition:    0.28s ease;
+}
+
+/* Fuente general para el sistema */
+body.layout-nuevo {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: "Poppins", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: radial-gradient(circle at top left, #f4f7ff 0, #d7e4ff 45%, #bcd5ff 100%);
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* -----------------------------------------
+   FONDO GRAFICO DE BARRAS
+----------------------------------------- */
+body.layout-nuevo::before {
+  content: "";
+  position: fixed;
+  inset: auto -10% 0;
+  height: 520px;
+  background-image: url("/img/grafico-barras.svg");
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  background-size: contain;
+  opacity: 0.22;
+  pointer-events: none;
+  z-index: 0;
+  filter: drop-shadow(0 18px 45px rgba(15, 23, 42, 0.35));
+}
+
+/* -----------------------------------------
+   ENCABEZADO
+----------------------------------------- */
+.encabezado {
+  position: relative;
+  z-index: 2;
+  padding: 26px 16px 18px;
+}
+
+/* CONTENEDOR DEL ENCABEZADO — AHORA AL CENTRO */
+.encabezado-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 22px 26px;
+  border-radius: 22px;
+  background: linear-gradient(120deg, rgba(255,255,255,0.96), rgba(243,247,255,0.98));
+  border: 1px solid rgba(255,255,255,0.85);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.12);
+  display: flex;
+  flex-direction: column;    /* ✔ ahora todo va en columna */
+  align-items: center;       /* ✔ centrado total */
+  text-align: center;        /* ✔ texto centrado */
+  gap: 6px;
+  backdrop-filter: blur(10px);
+}
+
+/* ✔ COLOR MEJORADO (NO NEGRO) */
+.encabezado h1 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #234C88;  /* azul del sistema, no negro */
+  text-transform: uppercase;
+}
+
+.encabezado-sub {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #3E5F9B;   /* tono más suave y profesional */
+}
+
+/* QUITAMOS COMPLETAMENTE LA BADGE */
+.encabezado-badge {
+  display: none !important;
+}
+
+/* Móvil */
+@media (max-width: 768px) {
+  .encabezado-inner {
+    border-radius: 18px;
+    padding: 16px;
+  }
+
+  .encabezado h1 {
+    font-size: 1.55rem;
+  }
+
+  .encabezado-sub {
+    font-size: 0.92rem;
+  }
+}
+
+/* -----------------------------------------
+   PANEL CENTRAL
+----------------------------------------- */
+.panel-central {
+  position: relative;
+  z-index: 2;
+  max-width: 980px;
+  margin: 40px auto 70px;
+  padding: 40px 42px 46px;
+  background: radial-gradient(circle at top left, #ffffff 0, #f7fbff 40%, #edf4ff 100%);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--sombra-fuerte);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+}
+
+/* “Glow” suave detrás del panel */
+.panel-central::before {
+  content: "";
+  position: absolute;
+  inset: -18px -26px auto;
+  background: radial-gradient(circle at top, rgba(37, 99, 235, 0.09), transparent 60%);
+  z-index: -1;
+}
+
+/* -----------------------------------------
+   LOGO
+----------------------------------------- */
+.logo-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.logo-circulo {
+  background: var(--panel-bg);
+  padding: 24px;
+  border-radius: 50%;
+  width: 140px;
+  height: 140px;
+  object-fit: contain;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  transition: transform var(--transition), box-shadow var(--transition), filter var(--transition);
+}
+
+.logo-circulo:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 26px 70px rgba(15, 23, 42, 0.32);
+  filter: saturate(1.1);
+}
+
+/* -----------------------------------------
+   DESCRIPCIÓN
+----------------------------------------- */
+.descripcion {
+  font-size: 1.05rem;
+  color: var(--azul-medio);
+  text-align: center;
+  margin-bottom: 32px;
+  font-weight: 500;
+}
+
+.descripcion span {
+  font-weight: 600;
+  color: var(--azul-acento);
+}
+
+/* -----------------------------------------
+   CONTENEDOR DE MÓDULOS
+----------------------------------------- */
+.menu-modulos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+/* Para cuando agregues más módulos se adapta solo */
+.menu-modulos--3 {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+/* -----------------------------------------
+   TARJETAS DE MÓDULO
+----------------------------------------- */
+.item-modulo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  text-decoration: none;
+  background: linear-gradient(135deg, var(--azul-suave), #f6f9ff);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: var(--sombra-suave);
+  color: var(--azul-oscuro);
+  transition: transform var(--transition), box-shadow var(--transition), background var(--transition),
+    border-color var(--transition);
+  overflow: hidden;
+}
+
+.item-modulo::before {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  background: radial-gradient(circle at 0 0, rgba(37, 99, 235, 0.13), transparent 55%);
+  opacity: 0;
+  transition: opacity var(--transition), transform var(--transition);
+  transform: translate3d(-10px, -10px, 0);
+}
+
+.item-modulo:hover::before {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.item-icon {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.16);
+}
+
+.item-icon i {
+  font-size: 1.4rem;
+  color: var(--azul-acento);
+}
+
+.item-text {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.item-titulo {
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.item-subtitulo {
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+/* Flecha indicadora */
+.item-modulo::after {
+  content: "→";
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.4rem;
+  color: rgba(15, 23, 42, 0.25);
+  transition: transform var(--transition), color var(--transition), opacity var(--transition);
+  opacity: 0.7;
+}
+
+/* Hover “pro” */
+.item-modulo:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 24px 55px rgba(15, 23, 42, 0.28);
+  background: linear-gradient(135deg, #ffffff, #e9f1ff);
+  border-color: rgba(37, 99, 235, 0.45);
+}
+
+.item-modulo:hover::after {
+  transform: translate(4px, -50%);
+  color: rgba(37, 99, 235, 0.9);
+  opacity: 1;
+}
+
+/* Diferenciar módulos si querés */
+.item-modulo.m1 .item-icon {
+  background: rgba(22, 163, 74, 0.06);
+}
+.item-modulo.m1 .item-icon i {
+  color: #16a34a;
+}
+
+.item-modulo.m2 .item-icon {
+  background: rgba(249, 115, 22, 0.06);
+}
+.item-modulo.m2 .item-icon i {
+  color: #f97316;
+}
+
+/* -----------------------------------------
+   RESPONSIVE
+----------------------------------------- */
+@media (max-width: 992px) {
+  .encabezado-inner {
+    border-radius: 22px;
+  }
+
+  .encabezado h1 {
+    font-size: 1.7rem;
+  }
+
+  .panel-central {
+    margin: 30px 16px 50px;
+    padding: 32px 24px 38px;
+  }
+}
+
+@media (max-width: 768px) {
+  .encabezado-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 14px 18px;
+  }
+
+  .encabezado h1 {
+    font-size: 1.4rem;
+    letter-spacing: 0.12em;
+  }
+
+  .encabezado-sub {
+    font-size: 0.86rem;
+  }
+
+  .panel-central {
+    margin-top: 26px;
+  }
+
+  .menu-modulos {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .item-modulo::after {
+    right: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .logo-circulo {
+    width: 115px;
+    height: 115px;
+    padding: 18px;
+  }
+
+  .panel-central {
+    padding: 26px 18px 32px;
+  }
+
+  .item-modulo {
+    padding: 16px 16px;
+  }
+}
+
+
+

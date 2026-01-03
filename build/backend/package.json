@@ -1,0 +1,24 @@
+{
+  "name": "sistema-negocio",
+  "version": "1.0.0",
+  "description": "Sistema de gestión para negocio/kiosco",
+  "author": "Julieta Meza",
+  "private": true,
+
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+
+  "dependencies": {
+    "express": "^5.1.0",
+    "cors": "^2.8.5",
+    "bcryptjs": "^3.0.3",
+    "sqlite3": "^5.1.7"
+  }
+}
